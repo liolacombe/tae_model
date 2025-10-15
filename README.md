@@ -27,4 +27,4 @@ Residual = tae_predicted - tae_exact
 
 Contributors names and contact info
 
-ex. [Lionel Lacombe](https://github.com/liolacombe)
+[Lionel Lacombe](https://github.com/liolacombe)
