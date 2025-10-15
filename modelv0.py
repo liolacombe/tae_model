@@ -77,14 +77,18 @@ class TAEmodel(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.L = 2.0 # distance scaling
+        self.L = 2.0 # distance scaling based off water bond length
         self.transformer = nn.ModuleDict(dict(
             ate = nn.Embedding(config.natoms_type, config.n_embd),
             h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
             ln_f = nn.LayerNorm(config.n_embd),
         ))
-        # self.mlp = MLP(config)
         self.lm_head = nn.Linear(config.n_embd, 1, bias=False)
+        # extra loading for input conversion
+        atoms_dict = torch.load('atoms_dict.pt', weights_only=True)
+        atoms_type =  [x for (x, y) in sorted(list(atoms_dict.items()), key=lambda pair: pair[1])]
+        atoi = {at:i for i,at in enumerate(atoms_type)}
+        self.encode = lambda l: torch.tensor([atoi[at] for at in l], dtype=torch.int)
     
     def compute_coulomb_matrix(self, pos):
         a = 1.0 / (torch.cdist(pos, pos, p=2)/self.L + 1e-8) # (B, T, T)
@@ -102,7 +106,18 @@ class TAEmodel(nn.Module):
         for block in self.transformer.h:
             x = block(x, dist_matrix, coulomb_matrix)
         x = self.transformer.ln_f(x) # (B, T, n_embd)
-        # x = self.mlp(x)
         tae = torch.sum(self.lm_head(x).squeeze(-1), dim=-1) # sum((B, T)) -> (B)
 
         return tae
+    
+    def prepare_input(self, atlist, poslist):
+        atoms_idx = self.encode(atlist).view(1, -1)
+        pos = torch.tensor(poslist, dtype=torch.float).view(1, -1, 3)
+        x = (atoms_idx, pos)
+        return (x)
+
+    def compute(self, atlist, poslist):
+        x = self.prepare_input(atlist, poslist)
+        with torch.no_grad():
+            y = self.forward(x)
+        return y.item()
